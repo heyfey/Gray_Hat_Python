@@ -89,16 +89,16 @@ class debugger():
             return False
         
     def get_thread_context(self, thread_id=None, h_thread=None):
-        context = CONTEXT()
-        context.ContextFlags = CONTEXT_FULL | CONTEXT_DEBUG_REGISTERS
+        context64 = WOW64_CONTEXT()
+        context64.ContextFlags = CONTEXT_FULL | CONTEXT_DEBUG_REGISTERS
         
         # Obtain a handle to the thread.
         if not h_thread:
             h_thread = self.open_thread(thread_id)
         
-        if kernel32.GetThreadContext(h_thread, byref(context)):
+        if kernel32.GetThreadContext(h_thread, byref(context64)):
             kernel32.CloseHandle(h_thread)
-            return context
+            return context64
         else:
             return False
         
@@ -118,13 +118,14 @@ if __name__ == '__main__':
         
         # Now let's output the contents of some of the registers.
         print("[*] Dumping registers for thread ID: 0x%08x" % thread)
-        print("[**] EIP: 0x%08x" % thread_context.Eip)
-        print("[**] ESP: 0x%08x" % thread_context.Esp)
-        print("[**] EBP: 0x%08x" % thread_context.Ebp)
-        print("[**] EAX: 0x%08x" % thread_context.Eax)
-        print("[**] EBX: 0x%08x" % thread_context.Ebx)
-        print("[**] ECX: 0x%08x" % thread_context.Ecx)
-        print("[**] EDX: 0x%08x" % thread_context.Edx)
+        print("[**] Rax: 0x%012x" % thread_context.Rax)
+        print("[**] Rcx: 0x%012x" % thread_context.Rcx)
+        print("[**] Rdx: 0x%012x" % thread_context.Rdx)
+        print("[**] Rbx: 0x%012x" % thread_context.Rbx)
+        print("[**] Rsp: 0x%012x" % thread_context.Rsp)
+        print("[**] Rbp: 0x%012x" % thread_context.Rbp)
+        print("[**] Rsi: 0x%012x" % thread_context.Rsi)
+        print("[**] Rdi: 0x%012x" % thread_context.Rdi)
         print("[*] END DUMP\n")
     
     debugger.detach()
