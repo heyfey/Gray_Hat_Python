@@ -10,9 +10,13 @@ class debugger():
         self.pid = None
         self.debugger_active = False
         self.h_thread = None
-        self.context = None
+        self.context = None    
+          
         self.exception = None
-        self.exception_address = None
+        self.exception_address = None       
+        
+        self.breakpoints = {}
+        self.first_breakpoint = True
 
     """Process Attachment
     """
@@ -44,7 +48,7 @@ class debugger():
         if kernel32.WaitForDebugEvent(byref(debug_event), INFINITE):
             # Let's obtain the thread and context information.
             self.h_thread = self.open_thread(debug_event.dwThreadId)
-            self.context = self.get_thread_context(self.h_thread)
+            self.context = self.get_thread_context(h_thread=self.h_thread)
             
             print("Event Code: %d Thread ID: %d" %
                   (debug_event.dwDebugEventCode, debug_event.dwThreadId))
@@ -142,15 +146,102 @@ class debugger():
     """
     def exception_handler_breakpoint(self):
         print("[*] Inside the breakpoint handler.")
-        print("Exception Address: 0x%08x" % self.exception_address)
+        print("[*] Exception Address: 0x%08x" % self.exception_address)
+        
+        # Check if the breakpoint is one that we set.
+        if self.exception_address not in self.breakpoints:
+            # If it is the first Windows driven breakpoint
+            # then let's just continue on.
+            if self.first_breakpoint == True:
+                self.first_breakpoint = False
+                print("[*] Hit the first breakpoint.")
+                return DBG_CONTINUE
+        else:
+            print("[*] Hit user defined breakpoint.")
+        
         return DBG_CONTINUE
+    
+    
+    """ Soft Breakpoints
+    """
+    def func_resolve(self, dll, function):
+        GetModuleHandle = kernel32.GetModuleHandleA
+        # For 64-bit
+        GetModuleHandle.argtypes = [c_char_p]
+        GetModuleHandle.restype = c_void_p
         
+        handle = GetModuleHandle(dll)
         
+        GetProcAddress = kernel32.GetProcAddress
+        GetProcAddress.argtypes = [c_void_p, c_char_p]
+        GetProcAddress.restype = c_void_p
+        
+        address = GetProcAddress(handle, function)
+        
+        return address
+    
+    def bp_set(self, address):
+        print("[*] Setting breakpoint at: 0x%08x" % address)
+        if address not in self.breakpoints:
+            try:
+                # store the original byte
+                original_byte = self.read_process_memory(address, 1)
+                
+                # write the INT3 opcode
+                self.write_process_memory(address, "\xCC")
+                
+                # register the break point in our internal list
+                self.breakpoints[address] = (original_byte)
+            except:
+                return False
+            
+        return True
+
+    
+    def read_process_memory(self, address, length):
+        data = ""
+        read_buf = create_string_buffer(length)
+        count = c_ulong(0)
+        
+        if not kernel32.ReadProcessMemory(self.h_process,
+                                          address,
+                                          read_buf,
+                                          length,
+                                          byref(count)):
+            return False
+        else:
+            data += read_buf.raw
+            return data
+        
+    def write_process_memory(self, address, data):
+        count = c_ulong(0)
+        length = len(data)
+        
+        c_data = c_char_p(data[count.value:])
+        
+        if not kernel32.WriteProcessMemory(self.h_process,
+                                           address,
+                                           c_data,
+                                           length,
+                                           byref(count)):
+            return False
+        else:
+            return True
+        
+               
 if __name__ == '__main__':
     debugger = debugger()
+    
     pid = input("Enter the PID of the process to attach to "
                 "(you can get it from Task Manager): ")
+    
     debugger.attach(int(pid))
+    
+    printf_address = debugger.func_resolve(b"msvcrt.dll", b"printf")
+
+    print("[*] Address of printf: 0x%08x" % printf_address)
+
+    debugger.bp_set(printf_address)
     
     debugger.run()
     
