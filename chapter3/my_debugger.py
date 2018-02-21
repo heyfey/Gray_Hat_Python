@@ -9,6 +9,8 @@ class debugger():
         self.h_process = None
         self.pid = None
         self.debugger_active = False
+        self.h_thread = None
+        self.context = None
 
     """Process Attachment
     """
@@ -38,6 +40,13 @@ class debugger():
         continue_status = DBG_CONTINUE            
         
         if kernel32.WaitForDebugEvent(byref(debug_event), INFINITE):
+            # Let's obtain the thread and context information.
+            self.h_thread = self.open_thread(debug_event.dwThreadId)
+            self.context = self.get_thread_context(self.h_thread)
+            
+            print("Event Code: %d Thread ID: %d" %
+                  (debug_event.dwDebugEventCode, debug_event.dwThreadId))
+            
             kernel32.ContinueDebugEvent(debug_event.dwProcessId,
                                         debug_event.dwThreadId,
                                         continue_status)
@@ -109,23 +118,6 @@ if __name__ == '__main__':
                 "(you can get it from Task Manager): ")
     debugger.attach(int(pid))
     
-    list = debugger.enumerate_threads()
-    
-    # For each thread in the list we want to
-    # grab the value of each of the registers.
-    for thread in list:
-        thread_context = debugger.get_thread_context(thread)
-        
-        # Now let's output the contents of some of the registers.
-        print("[*] Dumping registers for thread ID: 0x%08x" % thread)
-        print("[**] Rax: 0x%012x" % thread_context.Rax)
-        print("[**] Rcx: 0x%012x" % thread_context.Rcx)
-        print("[**] Rdx: 0x%012x" % thread_context.Rdx)
-        print("[**] Rbx: 0x%012x" % thread_context.Rbx)
-        print("[**] Rsp: 0x%012x" % thread_context.Rsp)
-        print("[**] Rbp: 0x%012x" % thread_context.Rbp)
-        print("[**] Rsi: 0x%012x" % thread_context.Rsi)
-        print("[**] Rdi: 0x%012x" % thread_context.Rdi)
-        print("[*] END DUMP\n")
+    debugger.run()
     
     debugger.detach()
