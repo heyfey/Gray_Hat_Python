@@ -18,6 +18,15 @@ class debugger():
         self.breakpoints = {}
         self.first_breakpoint = True
         self.hardware_breakpoints = {}
+        
+        # Here let's determine an d store
+        # the default page size for the system.
+        system_info = SYSTEM_INFO()
+        kernel32.GetSystemInfo(byref(system_info))
+        self.page_size = system_info.dwPageSize
+        
+        self.guarded_pages = []
+        self.memory_breakpoints = {}
 
     """Process Attachment
     """
@@ -64,8 +73,11 @@ class debugger():
                 self.exception_address = \
                 debug_event.u.Exception.ExceptionRecord.ExceptionAddress
                 
+                print("[*] Exception Code: %d Exception Address: 0x%012x" 
+                      % (self.exception, self.exception_address))
+                
                 if self.exception == EXCEPTION_ACCESS_VIOLATION:
-                    print("Access Violation Detected.")
+                    print("[*] Access Violation Detected.")
                     
                 # If a breakpoint is detected, we call an internal
                 # handler.
@@ -73,10 +85,10 @@ class debugger():
                     continue_status = self.exception_handler_breakpoint()
                 
                 elif self.exception == EXCEPTION_GUARD_PAGE:
-                    print("Guard Page Access Detected.")
+                    print("[*] Guard Page Access Detected.")
                     
                 elif self.exception == EXCEPTION_SINGLE_STEP:
-                    print("Single Stepping.")  
+                    print("[*] Single Stepping.")  
                     self.exception_handler_single_step()
                              
             kernel32.ContinueDebugEvent(debug_event.dwProcessId,
@@ -148,7 +160,7 @@ class debugger():
     """
     def exception_handler_breakpoint(self):
         print("[*] Inside the breakpoint handler.")
-        print("[*] Exception Address: 0x%08x" % self.exception_address)
+        print("[*] Exception Address: 0x%012x" % self.exception_address)
         
         # Check if the breakpoint is one that we set.
         if self.exception_address not in self.breakpoints:
@@ -209,15 +221,18 @@ class debugger():
         
         return address
         
+    # TODO: Fix bug in soft breakpoint.
+    #       self.exception will get EXCEPTION_ACCESS_VIOLATION,
+    #       but expect EXCEPTION_BREAKPOINT
     def bp_set(self, address):
-        print("[*] Setting breakpoint at: 0x%08x" % address)
+        print("[*] Setting breakpoint at: 0x%012x" % address)
         if address not in self.breakpoints:
             try:
                 # store the original byte
                 original_byte = self.read_process_memory(address, 1)
                 
                 # write the INT3 opcode
-                self.write_process_memory(address, "\xCC")
+                self.write_process_memory(address, b"\xCC")
                 
                 # register the break point in our internal list
                 self.breakpoints[address] = original_byte
@@ -230,8 +245,11 @@ class debugger():
     def read_process_memory(self, address, length):
         data = ""
         read_buf = create_string_buffer(length)
-        count = c_ulong(0)
+        count = c_ulonglong(0)
         
+        from ctypes import wintypes as w
+        kernel32.ReadProcessMemory.argtypes = [w.HANDLE, w.LPCVOID, w.LPVOID, c_size_t, POINTER(c_size_t)]
+        kernel32.ReadProcessMemory.restype = w.BOOL
         if not kernel32.ReadProcessMemory(self.h_process,
                                           address,
                                           read_buf,
@@ -239,15 +257,18 @@ class debugger():
                                           byref(count)):
             return False
         else:
-            data += read_buf.raw
+            data = read_buf.raw
             return data
         
     def write_process_memory(self, address, data):
-        count = c_ulong(0)
+        count = c_ulonglong(0)
         length = len(data)
         
         c_data = c_char_p(data[count.value:])
         
+        from ctypes import wintypes as w
+        kernel32.WriteProcessMemory.argtypes = [w.HANDLE, w.LPCVOID, w.LPVOID, c_size_t, POINTER(c_size_t)]
+        kernel32.WriteProcessMemory.restype = w.BOOL
         if not kernel32.WriteProcessMemory(self.h_process,
                                            address,
                                            c_data,
@@ -257,7 +278,7 @@ class debugger():
         else:
             return True
         
-    """ Hardware Breakpoint
+    """ Hardware Breakpoints
     """
     def bp_set_hw(self, address, length, condition):
         # Check for a valid length value.
@@ -343,6 +364,52 @@ class debugger():
         
         return True
     
+    """Memory Breakpoints
+    """
+    # TODO: fix bug kernel32.VirtualQueryEx()
+    def bp_set_mem(self, address, size):
+        
+        mbi = MEMORY_BASIC_INFORMATION()
+        
+        # If our VirtualQueryEx() call doesn't return
+        # a full-sized MEMORY_BASIC_INFORMATION
+        # then return False
+        
+        if kernel32.VirtualQueryEx(self.h_process, 
+                                   c_ulonglong(address), 
+                                   byref(mbi), 
+                                   sizeof(mbi)) < sizeof(mbi):
+            return False
+        
+        current_page = mbi.BaseAddress
+        
+        # We will set the permissions on all pages that are
+        # affected by our memory breakpoint.
+        while current_page <= address + size:
+            
+            # Add the page to the list; this will
+            # differentiate our guarded pages from those
+            # that were set by the OS or the debuggee process.
+            self.guarded_pages.append(current_page)
+            
+            old_protection = c_ulong(0)
+            if not kernel32.VirtualProtectEx(self.h_process, 
+                                             current_page, 
+                                             size,
+                                             mbi.Protect | PAGE_GUARD,
+                                             byref(old_protection)):
+                return False
+            
+            # Increase our range by the size of the
+            # default system memory page size.
+            current_page += self.page_size
+        
+        # Add the memory breakpoint to our global list.
+        self.memory_breakpoints[address] = (address, size, mbi)
+        
+        return True
+        
+    
                
 if __name__ == '__main__':
     debugger = debugger()
@@ -353,9 +420,11 @@ if __name__ == '__main__':
     debugger.attach(int(pid))
     
     printf_address = debugger.func_resolve(b"msvcrt.dll", b"printf")
-    print("[*] Address of printf: 0x%08x" % printf_address)
+    print("[*] Address of printf: 0x%012x" % printf_address)
 
-    debugger.bp_set_hw(printf_address, 1, HW_EXECUTE)
+    debugger.bp_set(printf_address) # soft breakpoint
+    # debugger.bp_set_hw(printf_address, 1, HW_EXECUTE) # hardware breakpoint
+    # debugger.bp_set_mem(printf_address, debugger.page_size) # memory breakpoint
     
     debugger.run()
     

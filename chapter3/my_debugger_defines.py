@@ -146,14 +146,14 @@ class EXCEPTION_DEBUG_INFO(Structure):
 class DEBUG_EVENT_UNION(Union):
     _fields_ = [
         ("Exception",         EXCEPTION_DEBUG_INFO),
-#        ("CreateThread",      CREATE_THREAD_DEBUG_INFO),
-#        ("CreateProcessInfo", CREATE_PROCESS_DEBUG_INFO),
-#        ("ExitThread",        EXIT_THREAD_DEBUG_INFO),
-#        ("ExitProcess",       EXIT_PROCESS_DEBUG_INFO),
-#        ("LoadDll",           LOAD_DLL_DEBUG_INFO),
-#        ("UnloadDll",         UNLOAD_DLL_DEBUG_INFO),
-#        ("DebugString",       OUTPUT_DEBUG_STRING_INFO),
-#        ("RipInfo",           RIP_INFO),
+#         ("CreateThread",      CREATE_THREAD_DEBUG_INFO),
+#         ("CreateProcessInfo", CREATE_PROCESS_DEBUG_INFO),
+#         ("ExitThread",        EXIT_THREAD_DEBUG_INFO),
+#         ("ExitProcess",       EXIT_PROCESS_DEBUG_INFO),
+#         ("LoadDll",           LOAD_DLL_DEBUG_INFO),
+#         ("UnloadDll",         UNLOAD_DLL_DEBUG_INFO),
+#         ("DebugString",       OUTPUT_DEBUG_STRING_INFO),
+#         ("RipInfo",           RIP_INFO),
         ]   
 
 # DEBUG_EVENT describes a debugging event
