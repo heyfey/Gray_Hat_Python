@@ -147,10 +147,10 @@ class debugger():
         
         # Obtain a handle to the thread.
         if not h_thread:
-            h_thread = self.open_thread(thread_id)
+            self.h_thread = self.open_thread(thread_id)
         
         if kernel32.GetThreadContext(h_thread, byref(context64)):
-            kernel32.CloseHandle(h_thread)
+            # kernel32.CloseHandle(h_thread)
             return context64
         else:
             return False
@@ -160,7 +160,6 @@ class debugger():
     """
     def exception_handler_breakpoint(self):
         print("[*] Inside the breakpoint handler.")
-        print("[*] Exception Address: 0x%012x" % self.exception_address)
         
         # Check if the breakpoint is one that we set.
         if self.exception_address not in self.breakpoints:
@@ -172,6 +171,14 @@ class debugger():
                 return DBG_CONTINUE
         else:
             print("[*] Hit user defined breakpoint.")
+            self.write_process_memory(self.exception_address, 
+                                      self.breakpoints[self.exception_address])
+            
+            context = self.get_thread_context(h_thread=self.h_thread)
+            context.Rip -= 1
+            kernel32.SetThreadContext(self.h_thread, byref(context))
+            print("[*] Breakpoint removed.")
+            
         
         return DBG_CONTINUE
     
@@ -199,6 +206,7 @@ class debugger():
             continue_status = DBG_CONTINUE
             
         print("[*] Hardware breakpoint removed.")
+            
         return continue_status
     
 
@@ -219,11 +227,10 @@ class debugger():
         
         address = GetProcAddress(handle, function)
         
+        # kernel32.CloseHandle(c_ulonglong(handle))
+        
         return address
         
-    # TODO: Fix bug in soft breakpoint.
-    #       self.exception will get EXCEPTION_ACCESS_VIOLATION,
-    #       but expect EXCEPTION_BREAKPOINT
     def bp_set(self, address):
         print("[*] Setting breakpoint at: 0x%012x" % address)
         if address not in self.breakpoints:
@@ -280,6 +287,7 @@ class debugger():
         
     """ Hardware Breakpoints
     """
+    # TODO: fix bug self.get_thread_context() return False
     def bp_set_hw(self, address, length, condition):
         # Check for a valid length value.
         if length not in (1, 2, 4):
@@ -306,7 +314,6 @@ class debugger():
         # We want to set the debug register in every thread.
         for thread_id in self.enumerate_threads():
             context = self.get_thread_context(thread_id=thread_id)
-            
             # Enable the appropriate flag in the DR7
             # register to set the breakpoint.
             context.Dr7 |= 1 << (available * 2)
@@ -422,8 +429,8 @@ if __name__ == '__main__':
     printf_address = debugger.func_resolve(b"msvcrt.dll", b"printf")
     print("[*] Address of printf: 0x%012x" % printf_address)
 
-    debugger.bp_set(printf_address) # soft breakpoint
-    # debugger.bp_set_hw(printf_address, 1, HW_EXECUTE) # hardware breakpoint
+    #debugger.bp_set(printf_address) # soft breakpoint
+    debugger.bp_set_hw(printf_address, 1, HW_EXECUTE) # hardware breakpoint
     # debugger.bp_set_mem(printf_address, debugger.page_size) # memory breakpoint
     
     debugger.run()
