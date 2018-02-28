@@ -387,3 +387,17 @@ class MEMORY_BASIC_INFORMATION(Structure):
         ("Type", DWORD),
 ]
     
+# https://msdn.microsoft.com/fr-fr/library/windows/desktop/aa366775(v=vs.85).aspx
+class MEMORY_BASIC_INFORMATION64(Structure):
+    _fields_ = [
+        ('BaseAddress', c_ulonglong),
+        ('AllocationBase', c_ulonglong),
+        ('AllocationProtect', DWORD),
+        ('alignement1', DWORD),
+        ('RegionSize', c_ulonglong),
+        ('State', DWORD),
+        ('Protect', DWORD),
+        ('Type', DWORD),
+        ('alignement2', DWORD)
+]
+    

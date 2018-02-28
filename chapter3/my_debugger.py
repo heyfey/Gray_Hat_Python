@@ -170,12 +170,15 @@ class debugger():
                 return DBG_CONTINUE
         else:
             print("[*] Hit user defined breakpoint.")
+            
+            # Remove breakpoint
             self.write_process_memory(self.exception_address, 
                                       self.breakpoints[self.exception_address])
             
             context = self.get_thread_context(h_thread=self.h_thread)
             context.Rip -= 1
             kernel32.SetThreadContext(self.h_thread, byref(context))
+            del self.breakpoints[self.exception_address]
             print("[*] Breakpoint removed.")
             
         
@@ -369,19 +372,22 @@ class debugger():
     
     """Memory Breakpoints
     """
-    # TODO: fix bug kernel32.VirtualQueryEx()
     def bp_set_mem(self, address, size):
         
-        mbi = MEMORY_BASIC_INFORMATION()
+        mbi = MEMORY_BASIC_INFORMATION64()
         
         # If our VirtualQueryEx() call doesn't return
         # a full-sized MEMORY_BASIC_INFORMATION
-        # then return False
+        # then return False        
+        from ctypes import wintypes as w
+        kernel32.VirtualQueryEx.argtypes = [w.HANDLE, w.LPVOID, POINTER(MEMORY_BASIC_INFORMATION64), c_size_t]
+        kernel32.VirtualQueryEx.restype = c_size_t
         
         if kernel32.VirtualQueryEx(self.h_process, 
-                                   c_ulonglong(address), 
+                                   address, 
                                    byref(mbi), 
                                    sizeof(mbi)) < sizeof(mbi):
+            print(kernel32.GetLastError())
             return False
         
         current_page = mbi.BaseAddress
@@ -396,6 +402,9 @@ class debugger():
             self.guarded_pages.append(current_page)
             
             old_protection = c_ulong(0)
+            
+            kernel32.VirtualProtectEx.argtypes = [w.HANDLE, w.LPVOID, c_size_t, w.DWORD, POINTER(DWORD)]
+            kernel32.VirtualProtectEx.restype = w.BOOL
             if not kernel32.VirtualProtectEx(self.h_process, 
                                              current_page, 
                                              size,
@@ -425,9 +434,9 @@ if __name__ == '__main__':
     printf_address = debugger.func_resolve(b"msvcrt.dll", b"printf")
     print("[*] Address of printf: 0x%012x" % printf_address)
 
-    debugger.bp_set(printf_address) # soft breakpoint
+    # debugger.bp_set(printf_address) # soft breakpoint
     # debugger.bp_set_hw(printf_address, 1, HW_EXECUTE) # hardware breakpoint
-    # debugger.bp_set_mem(printf_address, debugger.page_size) # memory breakpoint
+    debugger.bp_set_mem(printf_address, debugger.page_size) # memory breakpoint
     
     debugger.run()
     
